@@ -17,23 +17,36 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/anime-
 const DB_NAME = 'anime-dark';
 let db;
 
-// Initialize MongoDB connection
-async function connectDB() {
-  try {
-    const client = new MongoClient(MONGODB_URI, { 
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
-    });
-    await client.connect();
-    db = client.db(); // Use database from URI
-    console.log('Connected to MongoDB');
-    
-    // Migrate old data if exists
-    migrateOldData();
-  } catch (err) {
-    console.error('MongoDB connection error:', err);
-    console.log('Starting server without database - uploads will fail');
-    db = null; // Allow server to start even if DB fails
+// Initialize MongoDB connection with retry logic
+async function connectDB(retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const client = new MongoClient(MONGODB_URI, { 
+        serverSelectionTimeoutMS: 10000,
+        socketTimeoutMS: 45000,
+        maxPoolSize: 10,
+        retryWrites: true,
+        ssl: true,
+        tlsAllowInvalidCertificates: false,
+      });
+      await client.connect();
+      db = client.db(); // Use database from URI
+      console.log('✅ Connected to MongoDB');
+      
+      // Migrate old data if exists
+      migrateOldData();
+      return; // Success!
+    } catch (err) {
+      console.error(`MongoDB connection attempt ${i + 1}/${retries} failed:`, err.message);
+      if (i < retries - 1) {
+        console.log(`Retrying in 5 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      } else {
+        console.error('⚠️  Failed to connect to MongoDB after', retries, 'attempts');
+        console.log('Starting server without database - uploads will fail');
+        db = null;
+      }
+    }
   }
 }
 
