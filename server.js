@@ -20,7 +20,10 @@ let db;
 // Initialize MongoDB connection
 async function connectDB() {
   try {
-    const client = new MongoClient(MONGODB_URI);
+    const client = new MongoClient(MONGODB_URI, { 
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+    });
     await client.connect();
     db = client.db(); // Use database from URI
     console.log('Connected to MongoDB');
@@ -29,6 +32,8 @@ async function connectDB() {
     migrateOldData();
   } catch (err) {
     console.error('MongoDB connection error:', err);
+    console.log('Starting server without database - uploads will fail');
+    db = null; // Allow server to start even if DB fails
   }
 }
 
@@ -63,6 +68,7 @@ function migrateOldData() {
 
 // Database helper functions
 function getAllWallpapers(callback) {
+  if (!db) return callback([]);
   db.collection('wallpapers').find({}).sort({ createdAt: -1 }).toArray((err, wallpapers) => {
     if (err) {
       console.error('Error querying database:', err);
@@ -74,6 +80,7 @@ function getAllWallpapers(callback) {
 }
 
 function addWallpaper(filename, tags, callback) {
+  if (!db) return callback(false);
   const wallpaper = {
     file: filename,
     tags: tags,
