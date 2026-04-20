@@ -738,26 +738,40 @@ app.get('/api', (req, res) => {
 
 // Handle uploads
 app.post('/upload', (req, res) => {
+  console.log('Upload attempt:', { 
+    hasFile: !!req.file, 
+    body: req.body, 
+    file: req.file ? req.file.originalname : 'none' 
+  });
+  
   upload.single('image')(req, res, err => {
     if (err) {
-      console.error('Upload error:', err);
-      return res.status(400).send('Upload error: ' + err.message);
+      console.error('Multer error:', err);
+      return res.status(400).send(`Upload error: ${err.message}`);
     }
     if (!req.file) {
-      return res.status(400).send('No file uploaded');
+      console.error('No file uploaded');
+      return res.status(400).send('No file uploaded. Please select an image file.');
     }
+    
     // Process tags
     const tags = (req.body.tags || '').split(',')
                    .map(t => t.trim().toLowerCase())
                    .filter(Boolean);
+    console.log('Processed tags:', tags);
+    
     if (tags.length === 0) {
-      return res.status(400).send('No tags provided');
+      console.error('No tags provided');
+      return res.status(400).send('No tags provided. Please enter at least one tag.');
     }
+    
     addWallpaper(req.file.filename, tags, (success) => {
       if (success) {
-        res.redirect('/');
+        console.log('Upload successful');
+        res.redirect('/?uploaded=1');
       } else {
-        res.status(400).send('Error saving to database');
+        console.error('Database save failed');
+        res.status(400).send('Error saving to database. Please try again.');
       }
     });
   });
