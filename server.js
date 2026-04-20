@@ -12,7 +12,7 @@ const WALL_DIR = path.join(DATA_DIR, 'wallpapers');
 if (!fs.existsSync(WALL_DIR)) { fs.mkdirSync(WALL_DIR); }
 
 // MongoDB connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/anime-dark';
 const DB_NAME = 'anime-dark';
 let db;
 
@@ -21,7 +21,7 @@ async function connectDB() {
   try {
     const client = new MongoClient(MONGODB_URI);
     await client.connect();
-    db = client.db(DB_NAME);
+    db = client.db(); // Use database from URI
     console.log('Connected to MongoDB');
     
     // Migrate old data if exists
