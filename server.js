@@ -3,25 +3,61 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const sqlite3 = require('sqlite3').verbose();
 
-// Ensure data directories/files exist
+// Ensure data directories exist
 const DATA_DIR = __dirname;
 const WALL_DIR = path.join(DATA_DIR, 'wallpapers');
-const DB_FILE = path.join(DATA_DIR, 'database.json');
+const DB_PATH = path.join(DATA_DIR, 'wallpapers.db');
 if (!fs.existsSync(WALL_DIR)) { fs.mkdirSync(WALL_DIR); }
-if (!fs.existsSync(DB_FILE)) { fs.writeFileSync(DB_FILE, '[]'); }
 
-// JSON database helpers
-function getDB() {
-  try {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  } catch (err) {
-    console.error('Error reading database:', err);
-    return [];
+// Initialize SQLite database
+const db = new sqlite3.Database(DB_PATH, (err) => {
+  if (err) {
+    console.error('Error opening database:', err);
+  } else {
+    console.log('Connected to SQLite database');
+    // Create table if it doesn't exist
+    db.run(`CREATE TABLE IF NOT EXISTS wallpapers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file TEXT NOT NULL UNIQUE,
+      tags TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
   }
+});
+
+// Database helper functions
+function getAllWallpapers(callback) {
+  db.all(`SELECT file, tags FROM wallpapers ORDER BY created_at DESC`, (err, rows) => {
+    if (err) {
+      console.error('Error querying database:', err);
+      callback([]);
+    } else {
+      const result = rows.map(row => ({
+        file: row.file,
+        tags: JSON.parse(row.tags)
+      }));
+      callback(result);
+    }
+  });
 }
-function saveDB(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+
+function addWallpaper(filename, tags, callback) {
+  const tagsJson = JSON.stringify(tags);
+  db.run(
+    `INSERT INTO wallpapers (file, tags) VALUES (?, ?)`,
+    [filename, tagsJson],
+    function(err) {
+      if (err) {
+        console.error('Error inserting wallpaper:', err);
+        callback(false);
+      } else {
+        console.log('Inserted wallpaper:', filename);
+        callback(true);
+      }
+    }
+  );
 }
 
 // Set up Multer for uploads
@@ -648,15 +684,16 @@ app.get('/admin', (req, res) => {
 
 // API for searching wallpapers
 app.get('/api', (req, res) => {
-  const db = getDB();
-  const q = (req.query.w || '').toLowerCase();
-  let result = db;
-  if (q) {
-    result = db.filter(item =>
-      item.tags.join(' ').toLowerCase().includes(q)
-    );
-  }
-  res.json(result);
+  getAllWallpapers((wallpapers) => {
+    const q = (req.query.w || '').toLowerCase();
+    let result = wallpapers;
+    if (q) {
+      result = wallpapers.filter(item =>
+        item.tags.join(' ').toLowerCase().includes(q)
+      );
+    }
+    res.json(result);
+  });
 });
 
 // Handle uploads
@@ -676,11 +713,13 @@ app.post('/upload', (req, res) => {
     if (tags.length === 0) {
       return res.status(400).send('No tags provided');
     }
-    const db = getDB();
-    db.push({ file: req.file.filename, tags: tags });
-    saveDB(db);
-    console.log('Uploaded:', req.file.filename, 'Tags:', tags);
-    res.redirect('/');
+    addWallpaper(req.file.filename, tags, (success) => {
+      if (success) {
+        res.redirect('/');
+      } else {
+        res.status(400).send('Error saving to database');
+      }
+    });
   });
 });
 
