@@ -23,8 +23,40 @@ async function connectDB() {
     await client.connect();
     db = client.db(DB_NAME);
     console.log('Connected to MongoDB');
+    
+    // Migrate old data if exists
+    migrateOldData();
   } catch (err) {
     console.error('MongoDB connection error:', err);
+  }
+}
+
+// Migrate old JSON data to MongoDB
+function migrateOldData() {
+  if (fs.existsSync(path.join(DATA_DIR, 'database.json'))) {
+    try {
+      const oldData = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'database.json'), 'utf8'));
+      if (oldData.length > 0) {
+        db.collection('wallpapers').countDocuments({}, (err, count) => {
+          if (count === 0) {
+            const migratedData = oldData.map(item => ({
+              file: item.file,
+              tags: item.tags,
+              createdAt: new Date()
+            }));
+            db.collection('wallpapers').insertMany(migratedData, (err, result) => {
+              if (!err) {
+                console.log(`Migrated ${result.insertedCount} wallpapers from JSON to MongoDB`);
+                // Optionally backup and remove old file
+                fs.renameSync(path.join(DATA_DIR, 'database.json'), path.join(DATA_DIR, 'database.json.backup'));
+              }
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Migration error:', err);
+    }
   }
 }
 

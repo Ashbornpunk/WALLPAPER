@@ -6,3 +6,4 @@ node_modules/
 .DS_Store
 wallpapers.db
 database.json
+sample_images/*
