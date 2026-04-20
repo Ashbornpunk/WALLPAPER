@@ -3,61 +3,57 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
-const sqlite3 = require('sqlite3').verbose();
+const { MongoClient } = require('mongodb');
 
 // Ensure data directories exist
 const DATA_DIR = __dirname;
 const WALL_DIR = path.join(DATA_DIR, 'wallpapers');
-const DB_PATH = path.join(DATA_DIR, 'wallpapers.db');
 if (!fs.existsSync(WALL_DIR)) { fs.mkdirSync(WALL_DIR); }
 
-// Initialize SQLite database
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error('Error opening database:', err);
-  } else {
-    console.log('Connected to SQLite database');
-    // Create table if it doesn't exist
-    db.run(`CREATE TABLE IF NOT EXISTS wallpapers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      file TEXT NOT NULL UNIQUE,
-      tags TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+// MongoDB connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const DB_NAME = 'anime-dark';
+let db;
+
+// Initialize MongoDB connection
+async function connectDB() {
+  try {
+    const client = new MongoClient(MONGODB_URI);
+    await client.connect();
+    db = client.db(DB_NAME);
+    console.log('Connected to MongoDB');
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
   }
-});
+}
 
 // Database helper functions
 function getAllWallpapers(callback) {
-  db.all(`SELECT file, tags FROM wallpapers ORDER BY created_at DESC`, (err, rows) => {
+  db.collection('wallpapers').find({}).sort({ createdAt: -1 }).toArray((err, wallpapers) => {
     if (err) {
       console.error('Error querying database:', err);
       callback([]);
     } else {
-      const result = rows.map(row => ({
-        file: row.file,
-        tags: JSON.parse(row.tags)
-      }));
-      callback(result);
+      callback(wallpapers);
     }
   });
 }
 
 function addWallpaper(filename, tags, callback) {
-  const tagsJson = JSON.stringify(tags);
-  db.run(
-    `INSERT INTO wallpapers (file, tags) VALUES (?, ?)`,
-    [filename, tagsJson],
-    function(err) {
-      if (err) {
-        console.error('Error inserting wallpaper:', err);
-        callback(false);
-      } else {
-        console.log('Inserted wallpaper:', filename);
-        callback(true);
-      }
+  const wallpaper = {
+    file: filename,
+    tags: tags,
+    createdAt: new Date()
+  };
+  db.collection('wallpapers').insertOne(wallpaper, (err, result) => {
+    if (err) {
+      console.error('Error inserting wallpaper:', err);
+      callback(false);
+    } else {
+      console.log('Inserted wallpaper:', filename);
+      callback(true);
     }
-  );
+  });
 }
 
 // Set up Multer for uploads
@@ -724,7 +720,12 @@ app.post('/upload', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, HOST, () => {
-  console.log(`Server running at http://localhost:${PORT}/`);
-  console.log('If connecting from another device, use your computer\'s LAN IP, e.g. http://192.168.x.x:3000');
+connectDB().then(() => {
+  app.listen(PORT, HOST, () => {
+    console.log(`Server running at http://localhost:${PORT}/`);
+    console.log('If connecting from another device, use your computer\'s LAN IP, e.g. http://192.168.x.x:3000');
+  });
+}).catch(err => {
+  console.error('Failed to connect to database:', err);
+  process.exit(1);
 });
