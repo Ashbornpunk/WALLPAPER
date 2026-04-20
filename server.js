@@ -1,6 +1,7 @@
 'use strict';
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -116,6 +117,9 @@ const upload = multer({
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
+
+// Enable CORS
+app.use(cors());
 
 // Serve static images
 app.use('/wallpapers', express.static(WALL_DIR));
